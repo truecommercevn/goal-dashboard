@@ -39,7 +39,8 @@ def drive_id(h, site_url, library):
 
 
 def children(h, drive, folder):
-    url = f"{G}/drives/{drive}/root:/{urllib.parse.quote(folder.strip('/'))}:/children?$top=200"
+    f = folder.strip('/')
+    url = f"{G}/drives/{drive}/root:/{urllib.parse.quote(f)}:/children?$top=200" if f else f"{G}/drives/{drive}/root/children?$top=200"
     out = []
     while url:
         j = get(h, url).json(); out += j['value']; url = j.get('@odata.nextLink')
@@ -62,12 +63,12 @@ def main():
         if m: cands.append((m[1], x))
     if not cands: sys.exit('no GoalsExport_YYYY-MM-DD.xlsx found in the goals folder')
     day, goals = max(cands, key=lambda t: t[0])           # newest date IN THE FILE NAME (not modified time)
-    # the employee list is copied next to the goals file (same site/folder): newest "Danh sach nhan vien*.xlsx"
+    # the employee list is shared by all dashboards: library root: newest "Danh sach nhan vien*.xlsx"
     ed = gd
-    emps = [x for x in children(h, gd, env('GOALS_FOLDER', 'Goal Dashboard'))
+    emps = [x for x in children(h, gd, env('SHARED_FOLDER', ''))      # shared list lives at the library root
             if x['name'].lower().startswith('danh sach nhan vien') and x['name'].lower().endswith('.xlsx')
             and not x['name'].startswith('~$')]
-    if not emps: sys.exit('no "Danh sach nhan vien*.xlsx" found in the Goal Dashboard folder - copy the employee list there')
+    if not emps: sys.exit('no "Danh sach nhan vien*.xlsx" found at the root of the People Insights Hub library')
     emp = max(emps, key=lambda x: x.get('lastModifiedDateTime', ''))
     acc = next((x for x in children(h, gd, env('GOALS_FOLDER', 'Goal Dashboard')) if x['name'].lower() == 'dashboard access.xlsx'), None)
     if not acc: sys.exit('Dashboard Access.xlsx not found in the goals folder')
