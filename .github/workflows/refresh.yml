@@ -51,7 +51,7 @@ jobs:
           EMP_FOLDER: ${{ vars.EMP_FOLDER }}
           EMP_FILE: ${{ vars.EMP_FILE }}
           FORCE: ${{ (inputs.force || github.event_name == 'push') && 'true' || 'false' }}
-        run: python fetch_graph.py | tee -a "$GITHUB_OUTPUT"
+        run: |           python fetch_graph.py > fetch_out.txt           cat fetch_out.txt >> "$GITHUB_OUTPUT"
 
       - name: Build dashboards
         if: steps.fetch.outputs.changed == 'true'
