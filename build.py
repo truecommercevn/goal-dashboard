@@ -85,11 +85,15 @@ def main():
     for fn in ('host.json', 'package.json'): shutil.copy(os.path.join(HERE, 'api_src', fn), os.path.join(a.api, fn))
     os.makedirs(os.path.join(a.api, 'src', 'functions'))
     shutil.copy(os.path.join(HERE, 'api_src', 'src', 'functions', 'data.js'), os.path.join(a.api, 'src', 'functions', 'data.js'))
+    auth = json.load(open('inputs/auth.json')) if os.path.exists('inputs/auth.json') else {
+        'clientId': os.environ.get('CLIENT_ID', ''), 'tenantId': os.environ.get('TENANT_ID', '')}
+    if not auth.get('clientId') or not auth.get('tenantId'): raise SystemExit('missing clientId/tenantId (inputs/auth.json)')
+    json.dump(auth, open(os.path.join(a.api, 'config.json'), 'w'))                   # used by the API to verify tokens
+    json.dump(auth, open(os.path.join(a.out, 'auth-config.json'), 'w'))              # public ids, used by the page to sign in
     print('access:', len(access), 'sign-in emails;', [h['name'] for h in cfg if not h['emails']], 'have no email yet')
 
     swa = {
-        'routes': [{'route': '/.auth/*', 'allowedRoles': ['anonymous']}, {'route': '/*', 'allowedRoles': ['authenticated']}],
-        'responseOverrides': {'401': {'redirect': '/.auth/login/aad?post_login_redirect_uri=.referrer', 'statusCode': 302}},
+        'platform': {'apiRuntime': 'node:20'},   # the API uses the Azure Functions v4 model (needs Node 18+)
         'globalHeaders': {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
                           'Content-Security-Policy': f"frame-ancestors 'self' {a.frame_ancestors}"},
     }

@@ -387,7 +387,14 @@
   </div>
 </div>
 <footer id="ftr"></footer>
-<div id="gate" style="position:fixed;inset:0;background:#F7FCFE;z-index:9999;display:grid;place-items:center;font-family:Manrope,Segoe UI,Arial,sans-serif;color:#002855;text-align:center;padding:24px"><div><h2 style="margin:0 0 8px">Goal Dashboard</h2><p id="gate-msg" style="color:#5A6B7A;margin:0">Signing you in…</p></div></div>
+<div id="gate" style="position:fixed;inset:0;background:linear-gradient(160deg,#00112A,#002855);z-index:9999;display:grid;place-items:center;font-family:Manrope,Segoe UI,Arial,sans-serif;padding:16px">
+  <div style="background:#fff;border-radius:18px;padding:28px 30px;width:min(360px,100%);text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.35)">
+    <h2 style="margin:0 0 6px;color:#00112A;font-size:20px">Goal Dashboard</h2>
+    <p id="gate-msg" style="color:#5A6B7A;font-size:13.5px;margin:0 0 16px;line-height:1.45">Signing you in…</p>
+    <button id="gate-btn" style="display:none;width:100%;background:#007DBB;color:#fff;border:0;border-radius:10px;padding:12px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit">Sign in with Microsoft</button>
+    <a id="gate-tab" target="_blank" rel="noopener" style="display:none;margin-top:12px;font-size:12.5px;color:#007DBB;font-weight:700">Open in a new tab</a>
+  </div>
+</div>
 <script type="text/plain" id="app-js">const OTHER='Other Reporting Lines';
 const BRAND="#007DBB", RED="#E4572E", GREEN="#1E9E6B", GREY="#9AA5B1";
 const BANDS = [
@@ -743,20 +750,59 @@ document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>
 renderDept(); drawEmp();
 
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <script>
 (async () => {
-  const msg = t => { document.getElementById('gate-msg').innerHTML = t; };
-  try {
-    const r = await fetch('/api/data', { credentials: 'same-origin', cache: 'no-store' });
-    if (r.status === 401) { location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(location.pathname); return; }
+  const $ = id => document.getElementById(id);
+  const msg = (t, btn) => { $('gate-msg').textContent = t; $('gate-btn').style.display = btn ? 'block' : 'none'; };
+  // the sign-in popup lands back on this page: let MSAL read the result in the opener, do nothing here
+  if (window.opener && window.opener !== window && /[#?&](code|error)=/.test(location.hash + location.search)) { msg('Signing you in…'); return; }
+  const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+  const usePopup = framed || /[?&]popup=1/.test(location.search);
+  $('gate-tab').href = location.origin + '/'; if (framed) $('gate-tab').style.display = 'inline-block';
+
+  let cfg;
+  try { cfg = await (await fetch('/auth-config.json', { cache: 'no-store' })).json(); } catch (e) { msg('Could not load the sign-in settings. Please reload.'); return; }
+  const app = new msal.PublicClientApplication({
+    auth: { clientId: cfg.clientId, authority: 'https://login.microsoftonline.com/' + cfg.tenantId, redirectUri: location.origin },
+    cache: { cacheLocation: 'sessionStorage' }
+  });
+  const scopes = ['openid', 'profile', 'email'];
+
+  async function load(idToken) {
+    msg('Loading your dashboard…');
+    const r = await fetch('/api/data', { headers: { 'X-User-Token': idToken }, cache: 'no-store' });
+    if (r.status === 401) throw new Error('auth');
     if (r.status === 403) { msg('You are signed in but not set up for this dashboard yet. Please contact the People Insights team.'); return; }
     if (!r.ok) { msg('Could not load the data. Please reload.'); return; }
     const p = await r.json();
     const s = document.createElement('script');
-    s.textContent = 'const DATA = ' + JSON.stringify(p.DATA) + ';\nconst ORG = ' + JSON.stringify(p.ORG) + ';\nconst HEAD_TITLE = ' + JSON.stringify(p.HEAD_TITLE) + ';\nconst META = ' + JSON.stringify(p.META) + ';\n' + document.getElementById('app-js').textContent;
+    s.textContent = 'const DATA = ' + JSON.stringify(p.DATA) + ';\nconst ORG = ' + JSON.stringify(p.ORG) + ';\nconst HEAD_TITLE = ' + JSON.stringify(p.HEAD_TITLE) + ';\nconst META = ' + JSON.stringify(p.META) + ';\n' + $('app-js').textContent;
     document.body.appendChild(s);
-    document.getElementById('gate').remove();
-  } catch (e) { msg('Could not load the dashboard. Please reload.'); }
+    $('gate').remove();
+  }
+  async function silentToken() {
+    const acc = app.getAllAccounts()[0];
+    if (acc) { try { return (await app.acquireTokenSilent({ scopes, account: acc })).idToken; } catch (e) {} }
+    try { return (await app.ssoSilent({ scopes })).idToken; } catch (e) { return null; }
+  }
+  async function popupLogin() {
+    try { const r = await app.loginPopup({ scopes, prompt: 'select_account' }); return r.idToken; }
+    catch (e) { msg('The sign-in window was blocked or closed. Please try again, or use "Open in a new tab".', true); return null; }
+  }
+  try {
+    if (!usePopup) {                                    // opened directly in a browser tab
+      const red = await app.handleRedirectPromise();
+      let tok = red && red.idToken || await silentToken();
+      if (!tok) { msg('Redirecting to Microsoft sign-in…'); await app.loginRedirect({ scopes }); return; }
+      await load(tok); return;
+    }
+    msg('Signing you in…');                             // inside SharePoint (iframe)
+    let tok = await silentToken();
+    if (tok) { try { await load(tok); return; } catch (e) {} }
+    msg('Please sign in with your Microsoft account to see your dashboard.', true);
+    $('gate-btn').onclick = async () => { const t = await popupLogin(); if (t) { try { await load(t); } catch (e) { msg('Sign-in failed. Please reload and try again.', true); } } };
+  } catch (e) { msg('Could not sign you in. Please reload.', true); $('gate-btn').onclick = () => location.reload(); }
 })();
 </script>
 </body>

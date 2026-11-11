@@ -81,6 +81,7 @@ def main():
         download(h, gd, goals, f"inputs/{goals['name']}")
         download(h, ed, emp, 'inputs/employees.xlsx')
         download(h, gd, acc, 'inputs/access.xlsx')
+        json.dump({'clientId': env('CLIENT_ID'), 'tenantId': env('TENANT_ID')}, open('inputs/auth.json', 'w'))   # public ids, not secrets
         open('state/fingerprint.txt', 'w').write(fp)
         json.dump({'goals': goals['name']}, open('inputs/names.json', 'w'))
     print('changed=' + ('true' if changed else 'false'))
