@@ -439,8 +439,10 @@ const ALL = agg(ALL_GOALS);
 const HEAD_ORDER = ['Amy Nguyen','Toan Nguyen','Ping Guo','Thanh Thai','Anh Nguyen',OTHER];
 const HEADS_M = {};
 EMPS.forEach(e=>{ (HEADS_M[e.head]=HEADS_M[e.head]||{name:e.head, emps:[], goals:[]}); HEADS_M[e.head].emps.push(e); HEADS_M[e.head].goals.push(...e.goals); });
-const leaderSet = emps => { const nm=new Set(emps.map(e=>e.name)); const H=new Set(emps.filter(e=>e.sup==='(Dept Head)').map(e=>e.name)); return new Set(emps.filter(e=>e.sup!=='(Dept Head)').map(e=>e.sup).filter(n=>nm.has(n)&&!H.has(n))); };
-const empCount = emps => { const L=leaderSet(emps); return emps.filter(e=>e.sup!=='(Dept Head)' && !L.has(e.name)).length; };
+// A leader = a person other employees report to (matched on name AND job title, so two people with the same name are not mixed up). Dept Heads are not leaders.
+const leaderSet = emps => { const keys=new Set(emps.filter(e=>e.sup!=='(Dept Head)').map(e=>e.sup+'|'+(e.supTitle||''))); return new Set(emps.filter(p=>p.sup!=='(Dept Head)' && keys.has(p.name+'|'+(p.title||'')))); };
+const empCount = emps => { const L=leaderSet(emps); return emps.filter(e=>e.sup!=='(Dept Head)' && !L.has(e)).length; };
+const headCount = emps => emps.filter(e=>e.sup==='(Dept Head)').length;
 const teamTxt = emps => plural(empCount(emps),'employee')+' · '+plural(leaderSet(emps).size,'leader');
 const supCount = emps => leaderSet(emps).size;
 const HEAD_LIST = HEAD_ORDER.filter(n=>HEADS_M[n]).map(n=>({name:n, emps:HEADS_M[n].emps, nSup:supCount(HEADS_M[n].emps), nEmp:empCount(HEADS_M[n].emps), a:agg(HEADS_M[n].goals)}));
@@ -451,8 +453,8 @@ const headSub = n => n===OTHER ? 'Reports outside the VN leadership team' : (HEA
 const ttl = SINGLE ? `${HEAD_LIST[0].name}'s Team` : 'Vietnam';
 document.getElementById('hdr-title').textContent = 'Goal Dashboard — ' + ttl;
 document.getElementById('hdr-sub').textContent = SINGLE
-  ? `${headSub(HEAD_LIST[0].name)?headSub(HEAD_LIST[0].name)+' · ':''}${EMPS.length} employees · ${fmtN(ALL.n)} goals`
-  : `${EMPS.length} employees · ${fmtN(ALL.n)} goals · Vietnam`;
+  ? `${headSub(HEAD_LIST[0].name)?headSub(HEAD_LIST[0].name)+' · ':''}${teamTxt(EMPS)} · ${fmtN(ALL.n)} goals`
+  : `${plural(EMPS.length,'person').replace('persons','people')} · ${fmtN(ALL.n)} goals · Vietnam`;
 document.title = 'Goal Dashboard | ' + ttl;
 if (typeof META!=='undefined' && META.updated) document.getElementById('hdr-upd').textContent = 'Data updated: ' + META.updated;
 document.getElementById('ftr').textContent = SINGLE
@@ -529,7 +531,7 @@ let CURD = SINGLE ? HEAD_LIST[0].name : '__ALL__', MSEL = null;
 function renderRail(){
   const rail=document.getElementById('dept-rail');
   if(SINGLE){ rail.style.display='none'; document.querySelector('.dx').style.gridTemplateColumns='1fr'; return; }
-  const all=`<button class="ritem all ${CURD==='__ALL__'?'active':''}" data-d="__ALL__"><div class="rn">All Vietnam</div><div class="rm"><span>${EMPS.length} employees</span><span>${fmtN(ALL.n)} goals</span></div></button>`;
+  const all=`<button class="ritem all ${CURD==='__ALL__'?'active':''}" data-d="__ALL__"><div class="rn">All Vietnam</div><div class="rm"><span>${EMPS.length} people · ${fmtN(ALL.n)} goals</span></div></button>`;
   const items=HEAD_LIST.map(h=>`<button class="ritem ${CURD===h.name?'active':''}" data-d="${esc(h.name)}"><div class="rc">DEPT HEAD</div><div class="rn">${esc(h.name)}</div><div class="rc" style="font-weight:500;letter-spacing:0">${esc(headSub(h.name))}</div><div class="rm"><span>${h.nEmp} emp · ${h.nSup} leaders · ${h.a.n} goals</span><span><b>${fmtP(h.a.avgCap)}</b></span></div></button>`).join('');
   rail.innerHTML='<div class="rail-title">Select Dept Head</div>'+all+items;
 }
@@ -552,7 +554,7 @@ function renderDept(){
   const sub = isAll?'':headSub(CURD);
   const nSup = supCount(emps);
   let html=`
-  <div class="hero"><div style="position:relative;z-index:1"><span class="code">${badge}</span><h2>${esc(title)}</h2>${sub?`<div class="hsub">${esc(sub)}</div>`:''}<div class="meta"><span><b>${empCount(emps)}</b>employees</span><span><b>${nSup}</b>${nSup===1?'leader':'leaders'}</span><span><b>${fmtN(a.n)}</b>goals</span></div></div><div class="ringbox">${ring(a.avgCap)}<small>Avg completion${info(a,title)}</small><em>Each goal is limited to 0–100% before averaging</em></div></div>
+  <div class="hero"><div style="position:relative;z-index:1"><span class="code">${badge}</span><h2>${esc(title)}</h2>${sub?`<div class="hsub">${esc(sub)}</div>`:''}<div class="meta">${isAll?`<span><b>${emps.length}</b>people</span>`:''}<span><b>${empCount(emps)}</b>employees</span><span><b>${nSup}</b>${nSup===1?'leader':'leaders'}</span>${isAll?`<span><b>${headCount(emps)}</b>Dept Heads</span>`:''}<span><b>${fmtN(a.n)}</b>goals</span></div></div><div class="ringbox">${ring(a.avgCap)}<small>Avg completion${info(a,title)}</small><em>Each goal is limited to 0–100% before averaging</em></div></div>
   ${boxes(a)}
   <div class="card"><h2>Goal Completion Range</h2><div class="card-sub">Number of goals in each completion range. The % on the right is the share of the <b>${fmtN(a.n)} goals</b>.</div>${bandChart(a)}</div>
   ${rankings(emps)}`;
@@ -663,7 +665,7 @@ function drawEmp(){
   drawChips(base);
   VIEW=base.filter(e=>CHIPS.every(c=>!CHIP_ON[c.k]||c.f(e)));
   VIEW.sort((x,y)=>{ if(x.resigned!==y.resigned) return x.resigned?1:-1; const a=getVal(x,eKey),b=getVal(y,eKey);return (a>b?1:a<b?-1:0)*eDir||x.name.localeCompare(y.name);});   // no-longer-active always last
-  document.getElementById('emp-count').textContent=VIEW.length+' employees';
+  document.getElementById('emp-count').textContent=VIEW.length+(VIEW.length===1?' person':' people');
   document.getElementById('emp-body').innerHTML=VIEW.map((e,i)=>`<tr class="click" data-i="${i}"><td><div class="nmrow">${revDot(e)}<b>${esc(e.name)}</b>${e.resigned?'<span class="rtag">No longer active</span>':''}</div></td><td>${esc(e.sup==='(Dept Head)'?'—':e.sup)}</td><td>${esc(e.dept)}</td>${numCells(e.a)}<td class="go">›</td></tr>`).join('')||'<tr><td colspan="10" class="empty">No matching employees.</td></tr>';
 }
 document.querySelectorAll('#emp-head-row th[data-k]').forEach(th=>th.addEventListener('click',()=>{
@@ -773,7 +775,7 @@ renderDept(); drawEmp();
     msg('Loading your dashboard…');
     const r = await fetch('/api/data', { headers: { 'X-User-Token': idToken }, cache: 'no-store' });
     if (r.status === 401) throw new Error('auth');
-    if (r.status === 403) { msg('You are signed in but not set up for this dashboard yet. Please contact the People Insights team.'); return; }
+    if (r.status === 403) { msg('You are signed in but not set up for this dashboard yet. Please contact VN People Team.'); return; }
     if (!r.ok) { msg('Could not load the data. Please reload.'); return; }
     const p = await r.json();
     const s = document.createElement('script');
